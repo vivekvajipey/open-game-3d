@@ -1,0 +1,137 @@
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.module.js';
+import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.132.2/examples/jsm/loaders/GLTFLoader.js';
+
+export class Character {
+    constructor(scene) {
+        // Character properties
+        this.moveSpeed = 5;
+        this.turnSpeed = 2;
+        this.jumpForce = 10;
+        this.gravity = 20;
+        this.velocity = new THREE.Vector3(0, 0, 0);
+        this.isGrounded = true;
+        this.scene = scene;
+        
+        // Create a temporary box mesh until model loads
+        this.mesh = this.createTemporaryMesh();
+        this.mesh.castShadow = true;
+        scene.add(this.mesh);
+        
+        // Load the character model
+        this.loadCharacterModel();
+    }
+    
+    createTemporaryMesh() {
+        const geometry = new THREE.BoxGeometry(1, 2, 1);
+        const material = new THREE.MeshLambertMaterial({ color: 0x3333ff, transparent: true, opacity: 0 });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.y = 1;
+        return mesh;
+    }
+    
+    loadCharacterModel() {
+        const loader = new GLTFLoader();
+        
+        loader.load(
+            'assets/models/runner.glb',
+            (gltf) => {
+                // Success callback
+                this.model = gltf.scene;
+                this.model.castShadow = true;
+                
+                // Adjust model scale if needed
+                this.model.scale.set(1, 1, 1);
+                
+                // Position the model to match the mesh
+                this.model.position.copy(this.mesh.position);
+                this.model.rotation.copy(this.mesh.rotation);
+                
+                // Add model to scene
+                this.scene.add(this.model);
+            },
+            (xhr) => {
+                // Progress callback
+                console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+            },
+            (error) => {
+                // Error callback
+                console.error('An error happened loading the model:', error);
+            }
+        );
+    }
+    
+    update(keys, deltaTime) {
+        // Handle jumping
+        if (keys.space && this.isGrounded) {
+            this.velocity.y = this.jumpForce;
+            this.isGrounded = false;
+        }
+        
+        // Apply gravity
+        if (!this.isGrounded) {
+            this.velocity.y -= this.gravity * deltaTime;
+        }
+        
+        // Move the character based on input
+        const moveDir = new THREE.Vector3(0, 0, 0);
+        
+        if (keys.w) moveDir.z = -1;
+        if (keys.s) moveDir.z = 1;
+        if (keys.a) moveDir.x = -1;
+        if (keys.d) moveDir.x = 1;
+        
+        if (moveDir.length() > 0) {
+            moveDir.normalize();
+            
+            // Rotate character to face movement direction (for forward/backward)
+            if (keys.w || keys.s) {
+                const targetRotation = Math.atan2(moveDir.x, moveDir.z);
+                this.mesh.rotation.y = THREE.MathUtils.lerp(
+                    this.mesh.rotation.y,
+                    targetRotation,
+                    this.turnSpeed * deltaTime
+                );
+                
+                // Also rotate the model if it's loaded
+                if (this.model) {
+                    this.model.rotation.y = this.mesh.rotation.y;
+                }
+            }
+        }
+        
+        // Apply movement in the direction the character is facing
+        const forward = new THREE.Vector3(0, 0, -1);
+        forward.applyQuaternion(this.mesh.quaternion);
+        forward.multiplyScalar(moveDir.z * this.moveSpeed * deltaTime);
+        
+        const right = new THREE.Vector3(1, 0, 0);
+        right.applyQuaternion(this.mesh.quaternion);
+        right.multiplyScalar(moveDir.x * this.moveSpeed * deltaTime);
+        
+        this.mesh.position.add(forward);
+        this.mesh.position.add(right);
+        
+        // Update model position to match mesh if it's loaded
+        if (this.model) {
+            this.model.position.copy(this.mesh.position);
+        }
+        
+        // Apply vertical movement (jumping/falling)
+        this.mesh.position.y += this.velocity.y * deltaTime;
+        
+        // Ground collision
+        if (this.mesh.position.y < 1) {
+            this.mesh.position.y = 1;
+            this.velocity.y = 0;
+            this.isGrounded = true;
+        }
+    }
+    
+    getPosition() {
+        return this.mesh.position;
+    }
+    
+    getRotation() {
+        return this.mesh.rotation;
+    }
+} 

@@ -1,4 +1,5 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.module.js';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 export class Character {
     constructor(scene) {
@@ -9,22 +10,104 @@ export class Character {
         this.gravity = 20;
         this.velocity = new THREE.Vector3(0, 0, 0);
         this.isGrounded = true;
+        this.modelLoaded = false;
         
-        // Create character mesh (simple cube for now)
-        this.mesh = this.createCharacterMesh();
-        this.mesh.castShadow = true;
-        scene.add(this.mesh);
+        // Create a group to hold the character model
+        this.group = new THREE.Group();
+        this.group.position.y = 1; // start at ground level
+        scene.add(this.group);
+        
+        // Create a temporary cube while model loads
+        this.createTempCube();
+        
+        // Load glTF model
+        console.log('Attempting to load model from: assets/models/runner.glb');
+        
+        // Set a timeout for model loading
+        this.modelLoadTimeout = setTimeout(() => {
+            if (!this.modelLoaded) {
+                console.warn('Model load timed out - using cube character instead');
+            }
+        }, 5000); // 5 second timeout
+        
+        this.loadModel();
     }
     
-    createCharacterMesh() {
+    createTempCube() {
         const geometry = new THREE.BoxGeometry(1, 2, 1);
         const material = new THREE.MeshLambertMaterial({ color: 0x3333ff });
-        const mesh = new THREE.Mesh(geometry, material);
+        this.tempMesh = new THREE.Mesh(geometry, material);
+        this.tempMesh.castShadow = true;
+        this.group.add(this.tempMesh);
+    }
+    
+    loadModel() {
+        try {
+            const loader = new GLTFLoader();
+            console.log('GLTFLoader created successfully');
+            
+            loader.load(
+                'assets/models/runner.glb', 
+                // onLoad callback
+                (gltf) => {
+                    console.log('Model loaded successfully:', gltf);
+                    this.modelLoaded = true;
+                    clearTimeout(this.modelLoadTimeout);
+                    
+                    // Remove temp cube once model is loaded
+                    if (this.tempMesh) {
+                        this.group.remove(this.tempMesh);
+                        this.tempMesh.geometry.dispose();
+                        this.tempMesh.material.dispose();
+                        this.tempMesh = null;
+                    }
+                    
+                    const model = gltf.scene;
+                    
+                    // Set shadows for all meshes
+                    model.traverse((node) => {
+                        if (node.isMesh) {
+                            node.castShadow = true;
+                            node.receiveShadow = true;
+                        }
+                    });
+                    
+                    // Adjust model orientation and scale if needed
+                    model.rotation.y = Math.PI; // Might need to adjust based on your model
+                    model.scale.set(1, 1, 1); // Adjust scale as needed for your model
+                    
+                    this.group.add(model);
+                    this.model = model;
+                },
+                // onProgress callback
+                (xhr) => {
+                    if (xhr.total) {
+                        console.log(`${Math.round(xhr.loaded / xhr.total * 100)}% loaded`);
+                    } else {
+                        console.log(`${xhr.loaded} bytes loaded`);
+                    }
+                },
+                // onError callback
+                (error) => {
+                    console.error('Error loading model:', error);
+                    // Keep the temp cube visible if model fails to load
+                    this.createFallbackCharacter();
+                }
+            );
+        } catch (err) {
+            console.error('Exception when creating GLTFLoader or loading model:', err);
+            this.createFallbackCharacter();
+        }
+    }
+    
+    createFallbackCharacter() {
+        console.log('Creating fallback character (colored cube)');
+        // We can keep using the temp mesh created earlier
+        // Optionally, we could enhance it here with additional features
         
-        // Raise the character so it sits on the ground
-        mesh.position.y = 1;
-        
-        return mesh;
+        // Mark as loaded to prevent further attempts
+        this.modelLoaded = true;
+        clearTimeout(this.modelLoadTimeout);
     }
     
     update(keys, deltaTime) {
@@ -53,8 +136,8 @@ export class Character {
             // Rotate character to face movement direction (for forward/backward)
             if (keys.w || keys.s) {
                 const targetRotation = Math.atan2(moveDir.x, moveDir.z);
-                this.mesh.rotation.y = THREE.MathUtils.lerp(
-                    this.mesh.rotation.y,
+                this.group.rotation.y = THREE.MathUtils.lerp(
+                    this.group.rotation.y,
                     targetRotation,
                     this.turnSpeed * deltaTime
                 );
@@ -63,32 +146,32 @@ export class Character {
         
         // Apply movement in the direction the character is facing
         const forward = new THREE.Vector3(0, 0, -1);
-        forward.applyQuaternion(this.mesh.quaternion);
+        forward.applyQuaternion(this.group.quaternion);
         forward.multiplyScalar(moveDir.z * this.moveSpeed * deltaTime);
         
         const right = new THREE.Vector3(1, 0, 0);
-        right.applyQuaternion(this.mesh.quaternion);
+        right.applyQuaternion(this.group.quaternion);
         right.multiplyScalar(moveDir.x * this.moveSpeed * deltaTime);
         
-        this.mesh.position.add(forward);
-        this.mesh.position.add(right);
+        this.group.position.add(forward);
+        this.group.position.add(right);
         
         // Apply vertical movement (jumping/falling)
-        this.mesh.position.y += this.velocity.y * deltaTime;
+        this.group.position.y += this.velocity.y * deltaTime;
         
         // Ground collision
-        if (this.mesh.position.y < 1) {
-            this.mesh.position.y = 1;
+        if (this.group.position.y < 1) {
+            this.group.position.y = 1;
             this.velocity.y = 0;
             this.isGrounded = true;
         }
     }
     
     getPosition() {
-        return this.mesh.position;
+        return this.group.position;
     }
     
     getRotation() {
-        return this.mesh.rotation;
+        return this.group.rotation;
     }
 } 

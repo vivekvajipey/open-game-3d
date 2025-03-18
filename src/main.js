@@ -1,4 +1,4 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.module.js';
+import * as THREE from 'three';
 import { Renderer } from './engine/renderer.js';
 import { InputHandler } from './engine/input.js';
 import { Physics } from './engine/physics.js';
